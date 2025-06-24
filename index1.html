@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text Cleaner</title>
+<style>
+  :root {
+    --bg1: #111;
+    --fg1: #f0f0f0;
+    --accent: #7b5fe0;
+  }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    color: var(--fg1);
+    background: #000;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    filter: blur(2px) contrast(1.2);
+    z-index: -1;
+  }
+  h2 {
+    text-align: center;
+    margin-top: 40px;
+    opacity: 0.8;
+  }
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  textarea {
+    width: 80%;
+    height: 150px;
+    padding: 10px;
+    margin-bottom: 10px;
+    resize: vertical;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: rgba(255,255,255,0.1);
+    color: var(--fg1);
+  }
+  button {
+    margin: 5px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  button:hover {
+    box-shadow: 0 0 8px var(--accent);
+  }
+  #output {
+    width: 80%;
+    margin-top: 10px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th, td {
+    border: 1px solid #444;
+    padding: 4px;
+    text-align: left;
+  }
+  #mini-log {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.6);
+    color: var(--fg1);
+    padding: 5px;
+    font-size: 12px;
+    border-radius: 4px;
+    max-width: 200px;
+  }
+  .hidden {
+    display: none;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<h2 id="title">Text Analyzer</h2>
+<div class="container">
+  <textarea id="input" placeholder="Введите текст..."></textarea>
+  <div>
+    <button id="analyze">Анализ</button>
+    <button id="clean">Очистить</button>
+  </div>
+  <div id="output"></div>
+</div>
+<div id="mini-log" class="hidden"></div>
+<script>
+(function(){
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let w, h;
+  function resize(){
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  const cols = 20, rows = 12;
+  const grid = [];
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      grid.push({x: x/(cols-1), y: y/(rows-1), ox:x/(cols-1), oy:y/(rows-1)});
+    }
+  }
+  let time = 0;
+  let mouse = {x:0,y:0};
+  canvas.addEventListener('mousemove',e=>{
+    mouse.x = e.clientX/w;
+    mouse.y = e.clientY/h;
+  });
+  canvas.addEventListener('click', ()=>{
+    gsap.to(grid, {duration:0.3, shortRotation:1});
+  });
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = `hsl(${(time*40)%360},70%,60%)`;
+    ctx.lineWidth = 1;
+    for(let y=0;y<rows;y++){
+      ctx.beginPath();
+      for(let x=0;x<cols;x++){
+        const p = grid[y*cols+x];
+        const dx = p.x - mouse.x;
+        const dy = p.y - mouse.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        const force = Math.exp(-dist*20);
+        const nx = p.ox + Math.sin(time + p.ox*5 + p.oy*5)*0.02 - dx*force*0.05;
+        const ny = p.oy + Math.sin(time + p.ox*5 + p.oy*5 + 1)*0.02 - dy*force*0.05;
+        p.x += (nx - p.x)*0.1;
+        p.y += (ny - p.y)*0.1;
+        ctx[(x===0?'moveTo':'lineTo')](p.x*w, p.y*h);
+      }
+      ctx.stroke();
+    }
+    for(let x=0;x<cols;x++){
+      ctx.beginPath();
+      for(let y=0;y<rows;y++){
+        const p = grid[y*cols+x];
+        ctx[(y===0?'moveTo':'lineTo')](p.x*w, p.y*h);
+      }
+      ctx.stroke();
+    }
+    time += 0.01;
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+(function(){
+  const input = document.getElementById('input');
+  const out = document.getElementById('output');
+  const log = document.getElementById('mini-log');
+  const patterns = [
+    {re:/\u200b/g, name:'Zero Width Space'},
+    {re:/\u00a0/g, name:'NBSP'},
+    {re:/\u200e/g, name:'LRM'},
+    {re:/\u200f/g, name:'RLM'}
+  ];
+  function analyze(){
+    const text = input.value;
+    const rows = [];
+    const found = [];
+    patterns.forEach(p=>{
+      const matches = text.match(p.re);
+      if(matches){
+        rows.push(`<tr><td>${p.name}</td><td>${p.re.source}</td><td>${matches.length}</td></tr>`);
+        found.push(...matches);
+      }
+    });
+    if(rows.length){
+      out.innerHTML = `<table><tr><th>Символ</th><th>Код</th><th>Количество</th></tr>${rows.join('')}</table>`;
+    }else{
+      out.textContent = 'Скрытых символов не найдено.';
+    }
+    log.textContent = found.slice(-3).map(c=>'\\u'+c.charCodeAt(0).toString(16)).join(' ');
+    log.classList.remove('hidden');
+  }
+  function clean(){
+    patterns.forEach(p=>{
+      input.value = input.value.replace(p.re,'');
+    });
+    analyze();
+  }
+  document.getElementById('analyze').onclick = analyze;
+  document.getElementById('clean').onclick = clean;
+})();
+(function(){
+  gsap.to('#title',{scale:1.05,opacity:1,duration:1,repeat:-1,yoyo:true,ease:'sine.inOut'});
+})();
+let dark=true;
+document.body.addEventListener('dblclick',()=>{
+  dark=!dark;
+  if(dark){
+    document.body.style.background='#000';
+    document.body.style.color='#f0f0f0';
+  }else{
+    document.body.style.background='#fff';
+    document.body.style.color='#111';
+  }
+});
+</script>
+</body>
+</html>
